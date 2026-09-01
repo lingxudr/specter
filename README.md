@@ -312,3 +312,38 @@ If you use this against an unauthorized target, you are on your own. The LICENSE
 ## License
 
 MIT + ethics clause — see [LICENSE](LICENSE).
+
+---
+
+## Pushing to GitHub
+
+If you cloned an existing repo, you can skip this. For first-time setup:
+
+```bash
+# 1. create a new empty repo on github.com (no README/.gitignore/license)
+#    e.g. https://github.com/new → name: specter, owner: letticha
+
+# 2. add the remote
+cd specter
+git remote add origin [email protected]:letticha/specter.git
+
+# 3. push
+git push -u origin main
+```
+
+If GitHub rejects the push (no auth), set up an SSH key or personal access token:
+
+```bash
+# option A: SSH key
+ssh-keygen -t ed25519 -C "[email protected]"
+# add ~/.ssh/id_ed25519.pub to github.com/settings/keys
+
+# option B: PAT (HTTPS)
+git remote set-url origin https://github.com/letticha/specter.git
+# create a token at github.com/settings/tokens (classic, scope: repo)
+# then either:
+#   git push https://<token>@github.com/letticha/specter.git main
+# or store in ~/.git-credentials after `git config --global credential.helper store`
+```
+
+To enable CI (`.github/workflows/ci.yml`): Settings → Actions → Allow all actions. CI runs on every push: syntax check, ruff lint, no-browser tests (token + detector).
