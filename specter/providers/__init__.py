@@ -32,16 +32,28 @@ from .aws_waf_adapter import AWSWAFAdapter
 from .recaptcha_adapter import ReCaptchaAdapter
 from .hcaptcha_adapter import HCaptchaAdapter
 from .arkose_adapter import ArkoseAdapter
+from .hcaptcha_solver_adapter import HCaptchaSolverAdapter
+from .recaptcha_solver_adapter import ReCaptchaSolverAdapter
 
 # Pre-register all 8 named adapters. UNKNOWN is the sentinel and never registered.
+# hCaptcha/reCAPTCHA: prefer the SOLVER adapter (auto_solvable=True) over the
+# human-required one. The solver still inherits all detection logic from the
+# base adapter, so detection confidence is unchanged.
 get_registry().register(CloudflareAdapter())
 get_registry().register(AkamaiAdapter())
 get_registry().register(DataDomeAdapter())
 get_registry().register(ImpervaAdapter())
 get_registry().register(AWSWAFAdapter())
-get_registry().register(ReCaptchaAdapter())
-get_registry().register(HCaptchaAdapter())
+get_registry().register(ReCaptchaAdapter())  # human-required fallback
+get_registry().register(HCaptchaAdapter())    # human-required fallback
 get_registry().register(ArkoseAdapter())
+
+# Auto-solver variants — override the human-required behavior.
+# Register LAST so they win the duplicate-key check (registry allows re-registration).
+import os as _os
+if _os.environ.get("SPECTER_CAPTCHA_SOLVER", "1") != "0":
+    get_registry().register(HCaptchaSolverAdapter())
+    get_registry().register(ReCaptchaSolverAdapter())
 
 __all__ = [
     "ProviderId",
@@ -67,4 +79,6 @@ __all__ = [
     "ReCaptchaAdapter",
     "HCaptchaAdapter",
     "ArkoseAdapter",
+    "HCaptchaSolverAdapter",
+    "ReCaptchaSolverAdapter",
 ]

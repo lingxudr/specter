@@ -567,21 +567,33 @@ class AIWebAgent:
             sel = plan.get("selector", "")
             target_desc = sel
             el = self.b.find_element(sel)
-            el.click()
+            self.b._run(el.click())  # sync wrapper for coroutine
             return action, sel, f"clicked {sel}"
 
         if action == "click_button":
             text = plan.get("text", "")
             target_desc = f"button:{text}"
-            el = self.b.find_by_role("button", text)
-            el.click()
+            # xkiro.com and many modern sites use <button> with text content
+            # but no aria-label. Try role-based first, fall back to text search.
+            try:
+                el = self.b.find_by_role("button", text)
+                self.b._run(el.click())  # sync wrapper for coroutine
+            except RuntimeError:
+                # fall back to find_by_text (selects first element containing text)
+                try:
+                    el = self.b.find_by_text(text, tag="button")
+                    self.b._run(el.click())  # sync wrapper for coroutine
+                except RuntimeError:
+                    # try any element (input[type=submit], div, span, etc.)
+                    el = self.b.find_by_text(text)
+                    self.b._run(el.click())  # sync wrapper for coroutine
             return action, text, f"clicked button {text!r}"
 
         if action == "click_link":
             text = plan.get("text", "")
             target_desc = f"link:{text}"
             el = self.b.find_by_text(text)
-            el.click()
+            self.b._run(el.click())  # sync wrapper for coroutine
             return action, text, f"clicked link {text!r}"
 
         if action == "type":
@@ -590,7 +602,7 @@ class AIWebAgent:
             enter = plan.get("press_enter", False)
             target_desc = f"{sel}={text!r}"
             el = self.b.find_element(sel)
-            el.type(text)
+            self.b._run(el.type(text))  # sync wrapper for coroutine
             if enter:
                 el.key("Enter")
             return action, target_desc, f"typed {text!r} into {sel}"
@@ -599,7 +611,7 @@ class AIWebAgent:
             text = plan.get("text", "")
             target_desc = f"first-input={text!r}"
             el = self.b.find_element("input[type='text'],input:not([type]),textarea")
-            el.type(text)
+            self.b._run(el.type(text))  # sync wrapper for coroutine
             return action, target_desc, f"filled first input with {text!r}"
 
         if action == "screenshot":
