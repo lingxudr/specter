@@ -156,15 +156,25 @@ SOLVED_COOKIES = {"cf_clearance", "__cf_bm", "cf_bm"}
 # Stable fingerprint (per-host, deterministic)
 # ===================================================================
 class Fingerprint:
+    # Realistic Android Chrome on a mid-range phone (Redmi Note 11 / MT6781 / 6GB)
+    # All values must be INTERNALLY CONSISTENT with the user agent string
     DEFAULT = {
-        "navigator_platform": "Linux x86_64",
+        # Android Chrome UA
+        "navigator_platform": "Linux armv81",
         "navigator_languages": "en-US,en",
         "ua_chrome_version": "130.0.0.0",
-        "webgl_vendor": "Intel Inc.",
-        "webgl_renderer": "Intel Iris OpenGL Engine",
-        "screen_width": 1366,
-        "screen_height": 768,
+        # WebGL: Mali-G57 (real GPU on MT6781 Helio G96)
+        # Use a generic mobile GPU string
+        "webgl_vendor": "ARM",
+        "webgl_renderer": "Mali-G57 MC2",
+        # Redmi Note 11 screen: 1080x2400, ~6.5"
+        "screen_width": 1080,
+        "screen_height": 2400,
         "color_depth": 24,
+        # device
+        "navigator_hardware_concurrency": 8,   # MT6781: 2xA76 + 6xA55 = 8
+        "navigator_device_memory": 4,           # 6GB physical, but JS reports 4
+        "navigator_max_touch_points": 5,        # touchscreen
     }
 
     def __init__(self, host: str):
@@ -180,6 +190,16 @@ class Fingerprint:
                 self.data = json.loads(self._cache.read_text())
                 if self.data.get("_seed") != self._seed:
                     self.data["_seed"] = self._seed
+                # Reset to defaults to ensure consistency on every run
+                # (don't keep stale values from old code)
+                self.data["navigator_platform"] = self.DEFAULT["navigator_platform"]
+                self.data["webgl_vendor"] = self.DEFAULT["webgl_vendor"]
+                self.data["webgl_renderer"] = self.DEFAULT["webgl_renderer"]
+                self.data["screen_width"] = self.DEFAULT["screen_width"]
+                self.data["screen_height"] = self.DEFAULT["screen_height"]
+                self.data["navigator_hardware_concurrency"] = self.DEFAULT["navigator_hardware_concurrency"]
+                self.data["navigator_device_memory"] = self.DEFAULT["navigator_device_memory"]
+                self.data["navigator_max_touch_points"] = self.DEFAULT["navigator_max_touch_points"]
                 return
             except Exception:
                 pass
@@ -191,11 +211,11 @@ class Fingerprint:
             "navigator_languages": ",".join(
                 ["en-US", "en"] + (["id-ID", "id"] if rng.random() < 0.3 else [])
             ),
-            "navigator_hardware_concurrency": rng.choice([4, 8, 8, 12, 16]),
-            "navigator_device_memory": rng.choice([4, 8, 8, 16]),
-            "navigator_max_touch_points": 0,
-            "screen_width": rng.choice([1366, 1440, 1536, 1920]),
-            "screen_height": rng.choice([768, 900, 864, 1080]),
+            "navigator_hardware_concurrency": self.DEFAULT["navigator_hardware_concurrency"],
+            "navigator_device_memory": self.DEFAULT["navigator_device_memory"],
+            "navigator_max_touch_points": self.DEFAULT["navigator_max_touch_points"],
+            "screen_width": self.DEFAULT["screen_width"],
+            "screen_height": self.DEFAULT["screen_height"],
             "color_depth": 24,
             "timezone": rng.choice([
                 "America/Los_Angeles", "America/New_York",
@@ -212,10 +232,12 @@ class Fingerprint:
         return self.data
 
     def user_agent(self) -> str:
+        # Real Android Chrome UA on Redmi Note 11 with Chrome 130
+        # Matches: Linux armv81, Mali-G57, 1080x2400
         return (
-            f"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+            f"Mozilla/5.0 (Linux; Android 13; 2201117PG) AppleWebKit/537.36 "
             f"(KHTML, like Gecko) Chrome/{self.data['ua_chrome_version']} "
-            f"Safari/537.36"
+            f"Mobile Safari/537.36"
         )
 
     def to_stealth_js(self) -> str:
@@ -265,24 +287,29 @@ class Fingerprint:
   Object.defineProperty(navigator,'language',{get:()=>FP.navigator_languages.split(',')[0]});
   Object.defineProperty(navigator,'webdriver',{get:()=>undefined});
   Object.defineProperty(navigator,'doNotTrack',{get:()=>null});
-  // screen
+  // screen (mobile: availWidth=screenWidth, no desktop chrome)
   try{Object.defineProperty(screen,'width',{get:()=>FP.screen_width,configurable:true});}catch(e){}
   try{Object.defineProperty(screen,'height',{get:()=>FP.screen_height,configurable:true});}catch(e){}
+  try{Object.defineProperty(screen,'availWidth',{get:()=>FP.screen_width,configurable:true});}catch(e){}
+  try{Object.defineProperty(screen,'availHeight',{get:()=>FP.screen_height,configurable:true});}catch(e){}
   try{Object.defineProperty(screen,'colorDepth',{get:()=>FP.color_depth,configurable:true});}catch(e){}
+  try{Object.defineProperty(screen,'pixelDepth',{get:()=>FP.color_depth,configurable:true});}catch(e){}
+  // touch: mobile has touch event support
+  try{Object.defineProperty(window,'ontouchstart',{get:()=>null,configurable:true});}catch(e){}
+  Object.defineProperty(navigator,'maxTouchPoints',{get:()=>FP.navigator_max_touch_points,configurable:true});
+  // iframe contentWindow fingerprint inherits
+  try{Object.defineProperty(Element.prototype,'onpointerrawupdate','x',{get:()=>undefined});}catch(e){}
   // timezone
   try{const _orig=Date.prototype.getTimezoneOffset;
     const om={'America/Los_Angeles':480,'America/New_York':300,
       'Europe/London':0,'Europe/Berlin':-120,'Asia/Jakarta':-420};
     Date.prototype.getTimezoneOffset=function(){
       return om[FP.timezone]!==undefined?om[FP.timezone]:_orig.call(this);};}catch(e){}
-  // plugins
+  // plugins (mobile Chrome has NO plugins)
   Object.defineProperty(navigator,'plugins',{get:()=>{
-    const arr=[{name:'Chrome PDF Plugin',filename:'internal-pdf-viewer',
-      description:'Portable Document Format'},{name:'Chrome PDF Viewer',
-      filename:'mhjfbmdgcfjbbpaeojofohoefgiehjai',description:''},
-      {name:'Native Client',filename:'internal-nacl-plugin',description:''}];
-    arr.item=i=>arr[i]||null;arr.namedItem=n=>arr.find(p=>p.name===n)||null;
-    arr.refresh=()=>{};return arr;}});
+    const arr=[];arr.item=()=>null;arr.namedItem=()=>null;arr.refresh=()=>{};return arr;}});
+  Object.defineProperty(navigator,'mimeTypes',{get:()=>{
+    const arr=[];arr.item=()=>null;arr.namedItem=()=>null;return arr;}});
   // ext
   const _gse=WebGLRenderingContext.prototype.getSupportedExtensions;
   WebGLRenderingContext.prototype.getSupportedExtensions=function(){
@@ -541,7 +568,7 @@ def launch_chrome(user_agent: str, profile_name: str = "default"):
         "--use-gl=angle --use-angle=swiftshader "
         "--enable-unsafe-swiftshader "
         "--js-flags=--max-old-space-size=384 --jitless "
-        "--window-size=1366,768 "
+        "--window-size=1080,2400 "
         f"--user-data-dir={profile_remote} "
         f"--user-agent=\"{user_agent}\" "
         f"--remote-debugging-port={CDP_PORT} "
@@ -936,9 +963,45 @@ class WebElement:
         """, timeout=5)
         await asyncio.sleep(random.uniform(0.1, 0.25))
         if human:
-            await human_type(self._b._cdp, text)
+            # human_type uses Input.insertText which is invisible to React onChange
+            # for controlled inputs. Use char-by-char with React-compatible setter.
+            for ch in text:
+                await self._b._cdp.js(f"""
+                    (() => {{
+                      const e = document.querySelectorAll({json.dumps(self._selector)})[{self._index}];
+                      if (!e) return false;
+                      const desc = Object.getOwnPropertyDescriptor(
+                        window.HTMLInputElement.prototype, 'value'
+                      ) || Object.getOwnPropertyDescriptor(
+                        window.HTMLTextAreaElement.prototype, 'value'
+                      );
+                      if (desc && desc.set) {{
+                        desc.set.call(e, e.value + {json.dumps(ch)});
+                        e.dispatchEvent(new Event('input', {{bubbles: true}}));
+                        e.dispatchEvent(new Event('change', {{bubbles: true}}));
+                      }}
+                      return true;
+                    }})()
+                """, timeout=5)
+                await asyncio.sleep(random.uniform(0.04, 0.12))
         else:
-            await self._b._cdp.cmd("Input.insertText", {"text": text}, timeout=10)
+            # Non-human: use native setter + Input.insertText for max compat
+            await self._b._cdp.js(f"""
+                (() => {{
+                  const e = document.querySelectorAll({json.dumps(self._selector)})[{self._index}];
+                  if (!e) return false;
+                  const proto = e.tagName === 'TEXTAREA'
+                    ? window.HTMLTextAreaElement.prototype
+                    : window.HTMLInputElement.prototype;
+                  const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                  if (desc && desc.set) {{
+                    desc.set.call(e, {json.dumps(text)});
+                    e.dispatchEvent(new Event('input', {{bubbles: true}}));
+                    e.dispatchEvent(new Event('change', {{bubbles: true}}));
+                  }}
+                  return true;
+                }})()
+            """, timeout=5)
 
     async def hover(self):
         info = await self._wait_present()
@@ -963,10 +1026,17 @@ class WebElement:
         await self._b._cdp.js(f"""
             (() => {{
               const e = document.querySelectorAll({json.dumps(self._selector)})[{self._index}];
-              if (e) {{
-                e.value = '';
+              if (!e) return false;
+              const proto = e.tagName === 'TEXTAREA'
+                ? window.HTMLTextAreaElement.prototype
+                : window.HTMLInputElement.prototype;
+              const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+              if (desc && desc.set) {{
+                desc.set.call(e, '');
                 e.dispatchEvent(new Event('input', {{bubbles: true}}));
+                e.dispatchEvent(new Event('change', {{bubbles: true}}));
               }}
+              return true;
             }})()
         """, timeout=5)
 
@@ -1752,10 +1822,43 @@ class _TextElement:
 
     async def type(self, text: str, human=True):
         await self.click(human=human)
+        # Use React-compatible native value setter (Input.insertText invisible to React onChange)
         if human:
-            await human_type(self._b._cdp, text)
+            for ch in text:
+                await self._b._cdp.js(f"""
+                    (() => {{
+                      const e = document.querySelectorAll({json.dumps(self._selector)})[{self._index}];
+                      if (!e) return false;
+                      const proto = e.tagName === 'TEXTAREA'
+                        ? window.HTMLTextAreaElement.prototype
+                        : window.HTMLInputElement.prototype;
+                      const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                      if (desc && desc.set) {{
+                        desc.set.call(e, e.value + {json.dumps(ch)});
+                        e.dispatchEvent(new Event('input', {{bubbles: true}}));
+                        e.dispatchEvent(new Event('change', {{bubbles: true}}));
+                      }}
+                      return true;
+                    }})()
+                """, timeout=5)
+                await asyncio.sleep(random.uniform(0.04, 0.12))
         else:
-            await self._b._cdp.cmd("Input.insertText", {"text": text}, timeout=10)
+            await self._b._cdp.js(f"""
+                (() => {{
+                  const e = document.querySelectorAll({json.dumps(self._selector)})[{self._index}];
+                  if (!e) return false;
+                  const proto = e.tagName === 'TEXTAREA'
+                    ? window.HTMLTextAreaElement.prototype
+                    : window.HTMLInputElement.prototype;
+                  const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                  if (desc && desc.set) {{
+                    desc.set.call(e, {json.dumps(text)});
+                    e.dispatchEvent(new Event('input', {{bubbles: true}}));
+                    e.dispatchEvent(new Event('change', {{bubbles: true}}));
+                  }}
+                  return true;
+                }})()
+            """, timeout=5)
 
 
 # ===================================================================
